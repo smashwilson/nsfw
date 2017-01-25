@@ -1,3 +1,4 @@
+#include <iostream>
 #include "../../includes/win32/ReadLoopRunner.h"
 
 ReadLoopRunner::ReadLoopRunner(std::wstring directory, EventQueue &queue, HANDLE directoryHandle):
@@ -9,34 +10,52 @@ ReadLoopRunner::ReadLoopRunner(std::wstring directory, EventQueue &queue, HANDLE
   ZeroMemory(&mOverlapped, sizeof(OVERLAPPED));
   mBuffer = new BYTE[mBufferSize * BUFFER_KB];
   mSwap = new BYTE[mBufferSize * BUFFER_KB];
+
+  std::cerr << (void*) this << " ReadLoopRunner() ==> mBuffer address: " << (void*) mBuffer
+    << " mSwap address: " << (void*) mSwap << std::endl;
 }
 
 ReadLoopRunner::~ReadLoopRunner() {
+  std::cerr << (void*) this << " ~ReadLoopRunner() ==> mBuffer address: " << (void*) mBuffer
+    << " mSwap address: " << (void*) mSwap << std::endl;
   delete[] mBuffer;
   delete[] mSwap;
+  std::cerr << (void*) this << " ~ReadLoopRunner() ==> both pointers deleted" << std::endl;
 }
 
 VOID CALLBACK ReadLoopRunner::eventCallback(DWORD errorCode, DWORD numBytes, LPOVERLAPPED overlapped) {
 	std::shared_ptr<ReadLoopRunner> *runner = (std::shared_ptr<ReadLoopRunner> *)overlapped->hEvent;
+  std::cerr << (void*) runner->get() << " eventCallback() ==> mBuffer address: " << (void*) runner->get()->mBuffer
+    << " mSwap address: " << (void*) runner->get()->mSwap << std::endl;
 
   if (errorCode != ERROR_SUCCESS) {
+    std::cerr << (void*) runner->get() << " eventCallback() ==> errorCode was not ERROR_SUCCESS" << std::endl;
     if (errorCode == ERROR_NOTIFY_ENUM_DIR) {
+      std::cerr << (void*) runner->get() << " eventCallback() ==> errorCode was ERROR_NOTIFY_ENUM_DIR" << std::endl;
       runner->get()->setError("Buffer filled up and service needs a restart");
     } else if (errorCode == ERROR_INVALID_PARAMETER) {
+      std::cerr << (void*) runner->get() << " eventCallback() ==> errorCode was ERROR_INVALID_PARAMETER" << std::endl;
       // resize the buffers because we're over the network, 64kb is the max buffer size for networked transmission
       runner->get()->resizeBuffers(64);
       runner->get()->read();
       return;
     } else {
+      std::cerr << (void*) runner->get() << " eventCallback() ==> errorCode was SHRUG " << errorCode << std::endl;
       runner->get()->setError("Service shutdown unexpectedly");
     }
+    std::cerr << (void*) runner->get() << " eventCallback() ==> about to delete runner" << std::endl;
   	delete (std::shared_ptr<ReadLoopRunner> *)runner;
+    std::cerr << (void*) runner->get() << " eventCallback() ==> runner deleted" << std::endl;
     return;
   }
 
+  std::cerr << (void*) runner->get() << " eventCallback() ==> about to swap" << std::endl;
   runner->get()->swap(numBytes);
+  std::cerr << (void*) runner->get() << " eventCallback() ==> about to read" << std::endl;
   runner->get()->read();
+  std::cerr << (void*) runner->get() << " eventCallback() ==> about to handleEvents" << std::endl;
   runner->get()->handleEvents();
+  std::cerr << (void*) runner->get() << " eventCallback() ==> complete" << std::endl;
 }
 
 std::string ReadLoopRunner::getError() {
@@ -129,9 +148,12 @@ std::string getUTF8FileName(std::wstring path) {
 }
 
 void ReadLoopRunner::handleEvents() {
+  std::cerr << (void*) this << " handleEvents() ==> mBuffer address: " << (void*) mBuffer
+    << " mSwap address: " << (void*) mSwap << std::endl;
   BYTE *base = mSwap;
   for (;;) {
     PFILE_NOTIFY_INFORMATION info = (PFILE_NOTIFY_INFORMATION)base;
+    std::cerr << (void*) this << " handleEvents() ==> info address: " << (void*) info << std::endl;
     std::wstring fileName = getWStringFileName(info->FileName, info->FileNameLength);
 
     if (info->Action == FILE_ACTION_RENAMED_OLD_NAME) {
@@ -177,6 +199,8 @@ void ReadLoopRunner::handleEvents() {
     }
     base += info->NextEntryOffset;
   }
+
+  std::cerr << (void*) this << " handleEvents() ==> complete" << std::endl;
 }
 
 bool ReadLoopRunner::hasErrored() {
@@ -184,6 +208,7 @@ bool ReadLoopRunner::hasErrored() {
 }
 
 void ReadLoopRunner::read() {
+  std::cerr << (void*) this << " read() ==> begin" << std::endl;
   DWORD bytes;
 
   if (!ReadDirectoryChangesW(
@@ -203,9 +228,29 @@ void ReadLoopRunner::read() {
     &mOverlapped,
     &ReadLoopRunner::eventCallback
   )) {
+    std::cerr << (void*) this << " read() ==> error encountered during read call" << std::endl;
+
+    DWORD dw = GetLastError();
+    LPSTR lpMsgBuf;
+    DWORD size = FormatMessageA(
+      FORMAT_MESSAGE_ALLOCATE_BUFFER |
+      FORMAT_MESSAGE_FROM_SYSTEM |
+      FORMAT_MESSAGE_IGNORE_INSERTS,
+      NULL,
+      dw,
+      MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+      (LPSTR) &lpMsgBuf,
+      0, NULL
+    );
+    std::string message(lpMsgBuf, size);
+    std::cerr << (void*) this << " read() ==> error was " << message << std::endl;
+    LocalFree(lpMsgBuf);
+
     setError("Service shutdown unexpectedly");
     delete (std::shared_ptr<ReadLoopRunner> *)mOverlapped.hEvent;
   }
+
+  std::cerr << (void*) this << " read() ==> async directory watch call successfully scheduled" << std::endl;
 }
 
 void ReadLoopRunner::resizeBuffers(unsigned int bufferSize) {
@@ -225,5 +270,9 @@ void ReadLoopRunner::setSharedPointer(std::shared_ptr<ReadLoopRunner> *ptr) {
 }
 
 void ReadLoopRunner::swap(DWORD numBytes) {
-  memcpy(mSwap, mBuffer, numBytes);
+  std::cerr << (void*) this << " swap() ==> mBuffer address: " << (void*) mBuffer
+    << " mSwap address: " << (void*) mSwap << std::endl;
+  void *dest = memcpy(mSwap, mBuffer, numBytes);
+  std::cerr << (void*) this << " swap() ==> complete. dest " << (void*) dest
+    << " should equal mSwap " << (void*) mSwap << std::endl;
 }
