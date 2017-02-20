@@ -5,7 +5,7 @@ const fse = promisify(require('fs-extra'));
 const exec = promisify((command, options, callback) =>
   require('child_process').exec(command, options, callback));
 
-jasmine.DEFAULT_TIMEOUT_INTERVAL = 120000;
+jasmine.DEFAULT_TIMEOUT_INTERVAL = 240000;
 
 const DEBOUNCE = 1000;
 const TIMEOUT_PER_STEP = 3000;
