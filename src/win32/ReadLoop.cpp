@@ -1,3 +1,4 @@
+#include <iostream>
 #include "../../includes/win32/ReadLoop.h"
 
 ReadLoop::ReadLoop(EventQueue &queue, std::string path):
@@ -124,6 +125,7 @@ void ReadLoop::shutdown() {
 	}
 
 	CancelIo(mDirectoryHandle);
+  std::cerr << "ReadLoop::shutdown() ==> closing directory handle" << std::endl;
 	CloseHandle(mDirectoryHandle);
 	mDirectoryHandle = NULL;
 }
