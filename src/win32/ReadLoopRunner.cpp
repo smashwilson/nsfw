@@ -52,10 +52,14 @@ VOID CALLBACK ReadLoopRunner::eventCallback(DWORD errorCode, DWORD numBytes, LPO
   std::cerr << (void*) runner->get() << " eventCallback() ==> about to swap" << std::endl;
   runner->get()->swap(numBytes);
   std::cerr << (void*) runner->get() << " eventCallback() ==> about to read" << std::endl;
-  runner->get()->read();
+  BOOL readScheduled = runner->get()->read();
   std::cerr << (void*) runner->get() << " eventCallback() ==> about to handleEvents" << std::endl;
   runner->get()->handleEvents();
   std::cerr << (void*) runner->get() << " eventCallback() ==> complete" << std::endl;
+
+  if (!readScheduled) {
+    delete runner;
+  }
 }
 
 std::string ReadLoopRunner::getError() {
@@ -207,8 +211,11 @@ bool ReadLoopRunner::hasErrored() {
   return mErrorMessage != "";
 }
 
-void ReadLoopRunner::read() {
-  std::cerr << (void*) this << " read() ==> begin" << std::endl;
+BOOL ReadLoopRunner::read() {
+  if (mDirectoryHandle == NULL) {
+    return FALSE;
+  }
+
   DWORD bytes;
 
   if (!ReadDirectoryChangesW(
@@ -247,10 +254,11 @@ void ReadLoopRunner::read() {
     LocalFree(lpMsgBuf);
 
     setError("Service shutdown unexpectedly");
-    delete (std::shared_ptr<ReadLoopRunner> *)mOverlapped.hEvent;
+    return FALSE;
   }
 
   std::cerr << (void*) this << " read() ==> async directory watch call successfully scheduled" << std::endl;
+  return TRUE;
 }
 
 void ReadLoopRunner::resizeBuffers(unsigned int bufferSize) {
@@ -275,4 +283,7 @@ void ReadLoopRunner::swap(DWORD numBytes) {
   void *dest = memcpy(mSwap, mBuffer, numBytes);
   std::cerr << (void*) this << " swap() ==> complete. dest " << (void*) dest
     << " should equal mSwap " << (void*) mSwap << std::endl;
+
+void ReadLoopRunner::prepareForShutdown() {
+  mDirectoryHandle = NULL;
 }
