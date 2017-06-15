@@ -19,6 +19,14 @@ NativeInterface::~NativeInterface() {
   delete (SERVICE *)mNativeInterface;
 }
 
+void NativeInterface::activate() {
+  ((SERVICE *) mNativeInterface)->activate();
+}
+
+void NativeInterface::deactivate() {
+  ((SERVICE *) mNativeInterface)->deactivate();
+}
+
 std::string NativeInterface::getError() {
   return ((SERVICE *)mNativeInterface)->getError();
 }

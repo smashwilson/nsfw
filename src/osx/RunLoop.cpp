@@ -1,4 +1,5 @@
 #include "../../includes/osx/RunLoop.h"
+#include <iostream>
 
 void *scheduleRunLoopWork(void *runLoop) {
   ((RunLoop *)runLoop)->work();
@@ -16,6 +17,7 @@ RunLoop::RunLoop(FSEventsService *eventsService, std::string path):
     return;
   }
 
+  std::cout << "[RunLoop::RunLoop] creating pthread to scheduleRunLoopWork" << std::endl;
   mStarted = !pthread_create(
     &mRunLoopThread,
     NULL,
@@ -45,6 +47,7 @@ RunLoop::~RunLoop() {
     pthread_cancel(mRunLoopThread);
   }
 
+  std::cout << "[RunLoop::~RunLoop] joining pthread" << std::endl;
   pthread_join(mRunLoopThread, NULL);
   pthread_mutex_destroy(&mMutex);
 }

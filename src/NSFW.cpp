@@ -308,6 +308,7 @@ void NSFW::StopWorker::Execute() {
 
   mNSFW->mRunning = false;
 
+  std::cout << "[NSFW::StopWorker::Execute] joining polling UV thread" << std::endl;
   uv_thread_join(&mNSFW->mPollThread);
 
   delete mNSFW->mInterface;
