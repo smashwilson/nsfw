@@ -1,4 +1,6 @@
 #include "../includes/NSFW.h"
+#include <iostream>
+#include <chrono>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -11,19 +13,23 @@
 #pragma unmanaged
 Persistent<v8::Function> NSFW::constructor;
 
+static const std::chrono::duration DEFAULT_DELAY = std::chrono::milliseconds(50);
+
 NSFW::NSFW(uint32_t debounceMS, std::string path, Callback *eventCallback, Callback *errorCallback):
-  mDebounceMS(debounceMS),
-  mErrorCallback(errorCallback),
-  mEventCallback(eventCallback),
-  mInterface(NULL),
-  mInterfaceLockValid(false),
-  mPath(path),
-  mRunning(false) {
-    HandleScope scope;
-    v8::Local<v8::Object> obj = New<v8::Object>();
-    mPersistentHandle.Reset(obj);
-    mInterfaceLockValid = uv_mutex_init(&mInterfaceLock) == 0;
-  }
+    mErrorCallback(errorCallback),
+    mEventCallback(eventCallback),
+    mInterface(NULL),
+    mInterfaceLockValid(false),
+    mPath(path),
+    mRunning(false) {
+  HandleScope scope;
+  v8::Local<v8::Object> obj = New<v8::Object>();
+  mPersistentHandle.Reset(obj);
+  mInterfaceLockValid = uv_mutex_init(&mInterfaceLock) == 0;
+
+  mDebounceInterval = std::chrono::milliseconds(debounceMS);
+  mLastPoll = std::chrono::time_point::min();
+}
 
 NSFW::~NSFW() {
   if (mInterface != NULL) {
@@ -103,40 +109,44 @@ void NSFW::fireEventCallback(uv_async_t *handle) {
   uv_thread_create(&cleanup, NSFW::cleanupEventCallback, baton);
 }
 
-void NSFW::pollForEvents(void *arg) {
-  NSFW *nsfw = (NSFW *)arg;
-  while(nsfw->mRunning) {
-    uv_mutex_lock(&nsfw->mInterfaceLock);
-
-    if (nsfw->mInterface->hasErrored()) {
-      ErrorBaton *baton = new ErrorBaton;
-      baton->nsfw = nsfw;
-      baton->error = nsfw->mInterface->getError();
-
-      nsfw->mErrorCallbackAsync.data = (void *)baton;
-      uv_async_send(&nsfw->mErrorCallbackAsync);
-      nsfw->mRunning = false;
-      uv_mutex_unlock(&nsfw->mInterfaceLock);
-      break;
-    }
-    std::vector<Event *> *events = nsfw->mInterface->getEvents();
-    if (events == NULL) {
-      uv_mutex_unlock(&nsfw->mInterfaceLock);
-      sleep_for_ms(50);
-      continue;
-    }
-
-    EventBaton *baton = new EventBaton;
-    baton->nsfw = nsfw;
-    baton->events = events;
-
-    nsfw->mEventCallbackAsync.data = (void *)baton;
-    uv_async_send(&nsfw->mEventCallbackAsync);
-
-    uv_mutex_unlock(&nsfw->mInterfaceLock);
-
-    sleep_for_ms(nsfw->mDebounceMS);
+std::chrono::duration NSFW::pollForEvents(std::chrono::time_point loopStart) {
+  if (!mRunning) {
+    return DEFAULT_DELAY;
   }
+
+  const std::chrono::duration elapsed = loopStart - mLastPoll;
+  if (elapsed < mDebounceInterval) {
+    return mDebounceInterval - elapsed;
+  }
+  mLastPoll = loopStart;
+
+  UVLock lock(mInterfaceLock);
+
+  if (mInterface->hasErrored()) {
+    ErrorBaton *baton = new ErrorBaton;
+    baton->nsfw = this;
+    baton->error = mInterface->getError();
+
+    mErrorCallbackAsync.data = (void*) baton;
+    uv_async_send(&mErrorCallbackAsync);
+    mRunning = false;
+
+    return DEFAULT_DELAY;
+  }
+
+  std::vector<Event*> *events = mInterface->getEvents();
+  if (events == NULL) {
+    return DEFAULT_DELAY;
+  }
+
+  EventBaton *baton = new EventBaton;
+  baton->nsfw = this;
+  baton->events = events;
+
+  mEventCallbackAsync.data = (void*) baton;
+  uv_async_send(&mEventCallbackAsync);
+
+  return mDebounceInterval;
 }
 
 NAN_MODULE_INIT(NSFW::Init) {
@@ -232,7 +242,6 @@ void NSFW::StartWorker::Execute() {
   mNSFW->mInterface = new NativeInterface(mNSFW->mPath);
   if (mNSFW->mInterface->isWatching()) {
     mNSFW->mRunning = true;
-    uv_thread_create(&mNSFW->mPollThread, NSFW::pollForEvents, mNSFW);
   } else {
     delete mNSFW->mInterface;
     mNSFW->mInterface = NULL;

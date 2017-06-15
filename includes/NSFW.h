@@ -5,6 +5,7 @@
 #include <nan.h>
 #include <uv.h>
 #include <vector>
+#include <chrono>
 
 using namespace Nan;
 
@@ -12,13 +13,14 @@ class NSFW : public ObjectWrap {
 public:
   static NAN_MODULE_INIT(Init);
 
+  std::chrono::duration pollForEvents(std::chrono::time_point loopStart);
+
   static void cleanupEventCallback(void *arg);
   static void fireErrorCallback(uv_async_t *handle);
   static void fireEventCallback(uv_async_t *handle);
-  static void pollForEvents(void *arg);
 
   Persistent<v8::Object> mPersistentHandle;
-  uint32_t mDebounceMS;
+  std::chrono::duration mDebounceInterval;
   uv_async_t mErrorCallbackAsync;
   uv_async_t mEventCallbackAsync;
   Callback *mErrorCallback;
@@ -28,6 +30,7 @@ public:
   bool mInterfaceLockValid;
   std::string mPath;
   uv_thread_t mPollThread;
+  std::chrono::time_point mLastPoll;
   bool mRunning;
 private:
   NSFW(uint32_t debounceMS, std::string path, Callback *eventCallback, Callback *errorCallback);
