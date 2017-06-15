@@ -8,3 +8,12 @@ Lock::Lock(pthread_mutex_t &mutex)
 Lock::~Lock() {
   pthread_mutex_unlock(&mMutex);
 }
+
+UVLock::UVLock(uv_mutex_t &mutex)
+  : mMutex(mutex) {
+  uv_mutex_lock(&mMutex);
+}
+
+UVLock::~UVLock() {
+  uv_mutex_unlock(&mMutex);
+}
